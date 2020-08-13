@@ -1,0 +1,293 @@
+#!/bin/sh
+
+cmd=`basename $0`
+dir=`dirname $0`
+
+tmp=/tmp/"$cmd"$$
+trap "rm -f $tmp.*" 0 1 2 15
+
+PATH="$dir:$PATH"
+
+. libldap.sh
+
+###############################################################################
+# Initialization
+#
+domain=`domainname`
+ypdir=/var/yp
+ypdbdir=/var/yp/etc
+make=/usr/ccs/bin/make
+
+ldap_opts="fordgid employeetype givenname sn mail fordBldgAbbr"
+
+###############################################################################
+# Command line processing.
+#
+users=''              # This is a required input parameter
+nismake=yes          # Default is to do an NIS 'make'
+
+show_usage() {
+  echo "usage: $cmd -user=CDSID [options...]"
+  echo "       $cmd -help"
+  echo
+  show_opts
+  echo
+}
+show_opts() {
+  echo "Options for $cmd:"
+  echo "   -user=CDSID         The Unix user login name"
+  echo "   -make=no            Skip the NIS 'make' step (useful for batches)"
+}
+
+for option in "$@"
+do
+  case "$option" in
+    -users=* )     users=`echo "$option" |cut -d= -f2` ;;
+    -make=* )     nismake=`echo "$option" |cut -d= -f2` ;;
+    -opts )       show_opts  ; exit 0 ;;
+    -help )       show_usage ; exit 0 ;;
+    *   )         show_usage ; exit 1 ;;
+  esac
+done
+
+###############################################################################
+# Input checking
+#
+if [ `echo $users |awk -F, '{print $1}'` == "" ];then
+  show_usage
+  exit 1
+fi
+
+null_check()
+{
+echo '\n'"Would you like to proceed NIS Deletion [Y/N]."
+read ent
+if [ -z "$ent" ]
+then
+echo "INFO: INVALID INPUT"
+null_check
+fi
+}
+
+###############################################################################
+
+for user in $(echo $users |sed 's/,/ /g'); do
+
+ldap_getattrs uid="$user" $ldap_opts
+
+RED='\033[01;31m'
+NONE='\033[00m'
+BOLD='\033[1m'
+
+if [ -z "$uid" ]; then
+
+  uid="$ldap_fordGID"
+
+   if [ -z "$uid" ]; then
+    echo "$BOLD NOTE:$RED NO CDS ENTRY FOUND FOR $user IN SILAS $NONE."
+    tput sgr0
+    null_check
+      if [ "$ent" = "N" -o "$ent" = "n" ]; then
+        echo "INFO: Your answer is [$ent]"
+        echo '\n'"Exiting from NIS Deletion ..."
+        sleep 5
+        exit 1
+      elif [ "$ent" = "Y" -o "$ent" = "y" ]; then
+        echo "INFO: Your answer is [$ent]"
+        echo '\n'"Continuing the process of NIS Deletion ..."
+      else
+        echo "INFO: INVALID INPUT [$ent]"
+        exit 1
+      fi
+   fi
+fi
+
+if [ -n "$uid" ]; then
+
+  uid="$ldap_fordGID"
+
+if [ -n "$uid" ]; then
+    echo "$BOLD NOTE:$RED CDS ENTRY EXIST FOR $user IN SILAS $NONE."
+    tput sgr0
+    null_check
+      if [ "$ent" = "N" -o "$ent" = "n" ]; then
+        echo "INFO: Your answer is [$ent]"
+        echo '\n'"Exiting from NIS Deletion ..."
+        sleep 5
+        exit 1
+      elif [ "$ent" = "Y" -o "$ent" = "y" ]; then
+        echo "INFO: Your answer is [$ent]"
+        echo '\n'"Continuing the process of NIS Deletion ..."
+      else
+        echo "INFO: INVALID INPUT [$ent]"
+        exit 1
+      fi
+   fi
+fi
+
+###############################################################################
+if [ ! -r "$ypdbdir/passwd" ]; then
+  echo "$cmd: cannot open: $ypdbdir/passwd"
+  echo "$cmd command has been terminated."
+  sleep 5
+  exit 1
+fi
+
+if [ ! -r "$ypdbdir/shadow" ]; then
+  echo "$cmd: cannot open: $ypdbdir/shadow"
+  echo "$cmd command has been terminated."
+  sleep 5
+  exit 1
+fi
+
+grep "^$user:" "$ypdbdir"/passwd >/dev/null 2>&1
+if [ $? != 0 ]; then
+  echo "NIS [$user] login does not exist (not in passwd)."
+  echo "$cmd command has been terminated."
+  sleep 5
+  exit 1
+fi
+
+grep "^$user:" "$ypdbdir"/shadow >/dev/null 2>&1
+if [ $? != 0 ]; then
+  echo "NIS [$user] login does not exist (not in shadow)."
+  echo "cmd command has been terminated."
+  sleep 5
+  exit 1
+fi
+
+###############################################################################
+# Shell functions.
+#
+install_map() {
+  newmap="$1"
+  dstfile="$2"
+
+  diff "$dstfile" "$newmap"
+  cp "$newmap" "$dstfile"
+}
+
+###############################################################################
+# Execution
+
+###########################################################
+# Mount-Point Check
+MNT=`df -h | grep $user`
+if [ $? = 0 ]; then
+  echo '\n'"$cmd: Unmounting the [/u/$user] ..."
+  umount /u/$user
+  if [ $? = 0 ]; then
+  echo "$cmd: Unmounted the [/u/$user] successfully."
+  else
+  echo "Please contact L2 Admin & report it."
+  echo "$cmd command has been terminated, due to Mount issue."
+  sleep 5
+  exit 1
+  fi
+fi
+
+###########################################################
+if [ -f "$ypdbdir"/group ]; then
+  echo "Copying the [passwd|group|shadow] files ..."
+  cp /var/yp/etc/passwd $LDATA/passwd.$TSTAMP.$$
+  cp /var/yp/etc/shadow $LDATA/shadow.$TSTAMP.$$
+  cp /var/yp/etc/group $LDATA/group.$TSTAMP.$$
+  echo '\n'"Deleting user $user from group ..."
+  if egrep "^$user|:$user,|,$user,|,$user\$" "$ypdbdir"/group >/dev/null 2>&1
+    then
+    sed -e "/^$user/d" -e "s/:$user,/:/g" -e "s/,$user,/,/g" -e "s/,$user\$//g" \
+      "$ypdbdir"/group > "$tmp".group
+    install_map "$tmp".group "$ypdbdir"/group
+    echo "$user has been succesfully deleted from group."
+  else
+    echo "$user doesn't exist in group."
+  fi
+else
+  echo "Group ["$ypdbdir"/group] file doesn't exist. Please contact L2 Admin & report it."
+  echo "$cmd command has been terminated."
+  sleep 5
+  exit 1
+fi
+
+###########################################################
+if [ -f "$ypdbdir"/passwd ]; then
+  echo '\n'"Deleting user $user from passwd ..."
+  if grep "^$user:" "$ypdbdir"/passwd >/dev/null 2>&1
+    then
+    #grep "^$user:" "$ypdbdir"/passwd >> "$ypdbdir"/passwd.retired
+
+    sed -e "/^$user:/d" "$ypdbdir"/passwd > "$tmp".passwd
+    install_map "$tmp".passwd "$ypdbdir"/passwd
+    echo "$user has been succesfully deleted from passwd."
+  else
+    echo "$user doesn't exist in passwd."
+  fi
+else
+  echo "Passwd ["$ypdbdir"/passwd] file doesn't exist. Please contact L2 Admin & report it."
+  echo "$cmd command has been terminated."
+  sleep 5
+  exit 1
+fi
+
+###########################################################
+if [ -f "$ypdbdir"/shadow ]; then
+  echo '\n'"Deleting user $user from shadow ..."
+  if grep "^$user:" "$ypdbdir"/shadow >/dev/null 2>&1
+    then
+    #grep "^$user:" "$ypdbdir"/passwd >> "$ypdbdir"/passwd.retired
+    sed -e "/^$user:/d" "$ypdbdir"/shadow > "$tmp".shadow
+    install_map "$tmp".shadow "$ypdbdir"/shadow
+    echo "$user has been succesfully deleted from shadow."
+  else
+    echo "$user doesn't exist in shadow."
+  fi
+else
+  echo "Shadow ["$ypdbdir"/shadow] file doesn't exist. Please contact L2 Admin & report it."
+  echo "$cmd command has been terminated."
+  sleep 5
+  exit 1
+fi
+
+###########################################################
+if [ -f "$ypdbdir"/netgroup ]; then
+  echo '\n'"Deleting user $user from netgroup ..."
+  if grep ",$user," "$ypdbdir"/netgroup >/dev/null 2>&1
+    then
+    sed -e "/,$user,/d" "$ypdbdir"/netgroup > "$tmp".netgroup
+    install_map "$tmp".netgroup "$ypdbdir"/netgroup
+  else
+    echo "$user doesn't exist in netgroup."
+  fi
+else
+  echo "Netgroup ["$ypdbdir"/netgroup] file doesn't exist. Please contact L2 Admin & report it."
+  echo "$cmd command has been terminated."
+  sleep 5
+  exit 1
+fi
+
+###########################################################
+# The aliases are not automatically cleaned.
+# For example, a deleted user may require a temporary forwarding alias.
+# Require that these manually get put in afterward??
+#
+echo
+if [ -f "$ypdbdir"/aliases ]; then
+  echo "Searching user $user in mail aliases ..."
+  if egrep "^$user|,$user,|,$user@|,$user\$" "$ypdbdir"/aliases>/dev/null 2>&1
+    then
+    echo "NOTICE: mail aliases may need manual cleanup [$user]:"
+    echo ""
+    egrep "^$user|,$user,|,$user@|,$user\$" "$ypdbdir"/aliases
+    echo ""
+  fi
+else
+  echo "Mail-Aliases file doesn't exist."
+fi
+done
+
+###########################################################
+if [ $nismake = yes ]; then
+  ( cd "$ypdir"; $make )
+fi
+
+echo
