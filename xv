@@ -1,0 +1,94 @@
+root@isgngz006 # sh -xv nis_delete -users=sshanm31,kkrish23,njaladi
+#!/bin/sh
+
+cmd=`basename $0`
++ basename nis_delete
+cmd=nis_delete
+dir=`dirname $0`
++ dirname nis_delete
+dir=.
+
+tmp=/tmp/"$cmd"$$
+tmp=/tmp/nis_delete32301
+trap "rm -f $tmp.*" 0 1 2 15
++ trap rm -f /tmp/nis_delete32301.* 0 1 2 15
+
+PATH="$dir:$PATH"
+PATH=.:/usr/sbin:/usr/bin:/usr/ccs/bin:/usr/openwin/bin:/usr/dt/bin:/usr/sfw/bin:/usr/local/bin:/usr/local/sbin:/usr/platform/sun4v/sbin:/opt/rsc/bin
+
+. libldap.sh
++ . libldap.sh
++ [ -x /usr/bin/logname ]
++ /usr/bin/logname
+ldap_cdsid=praja14
++ sed+  -e s/[^0-9]*\([0-9]*\).*/\1/id praja14
+
+ldapuser=2294177
+ldapbinddn=fordGID=2294177,ou=Employee,ou=People,o=Ford,c=US
+ldapopts=-x -LLL fordGID=2294177,ou=Employee,ou=People,o=Ford,c=US
+ldap=/usr/local/admin/bin/speldapsearch -x -LLL fordGID=2294177,ou=Employee,ou=People,o=Ford,c=US
+ldaptmp=/tmp/ldaplib32301
+
+###############################################################################
+# Initialization
+#
+domain=`domainname`
++ domainname
+domain=ftsi
+ypdir=/var/yp
+ypdir=/var/yp
+ypdbdir=/var/yp/etc
+ypdbdir=/var/yp/etc
+make=/usr/ccs/bin/make
+make=/usr/ccs/bin/make
+
+ldap_opts="fordgid employeetype givenname sn mail fordBldgAbbr"
+ldap_opts=fordgid employeetype givenname sn mail fordBldgAbbr
+
+###############################################################################
+# Command line processing.
+#
+users=''              # This is a required input parameter
+users=
+nismake=yes          # Default is to do an NIS 'make'
+nismake=yes
+
+show_usage() {
+  echo "usage: $cmd -user=CDSID [options...]"
+  echo "       $cmd -help"
+  echo
+  show_opts
+  echo
+}
+show_opts() {
+  echo "Options for $cmd:"
+  echo "   -user=CDSID         The Unix user login name"
+  echo "   -make=no            Skip the NIS 'make' step (useful for batches)"
+}
+
+for option in "$@"
+do
+  case "$option" in
+    -users=* )     users=`echo "$option" |cut -d= -f2` ;;
+    -make=* )     nismake=`echo "$option" |cut -d= -f2` ;;
+    -opts )       show_opts  ; exit 0 ;;
+    -help )       show_usage ; exit 0 ;;
+    *   )         show_usage ; exit 1 ;;
+  esac
+done
++ cut -d= + -f2
+echo -users=sshanm31,kkrish23,njaladi
+users=sshanm31,kkrish23,njaladi
+
+###############################################################################
+# Input checking
+#
+if [ `echo $users |awk -F, '{print $1}'` == "" ];then
+  show_usage
+  exit 1
+fi
++ awk -F, {print $1}
++ echo sshanm31,kkrish23,njaladi
++ [ sshanm31 ==  ]
+nis_delete: test: unknown operator ==
++ rm -f /tmp/nis_delete32301.*
